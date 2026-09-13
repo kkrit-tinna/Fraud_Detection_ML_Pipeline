@@ -36,8 +36,6 @@ project_root/
 │   ├── requirements.txt            # Development dependencies
 │   ├── summary.txt                 # Package documentation
 │   └── README.md                   # This file
-└── Torch_training/                 # PyTorch implementation (separate project)
-    └── [torch training files]
 ```
 
 ## Quick Start
