@@ -1,3 +1,4 @@
+***Status: complete, not actively maintained.***
 # Fraud Detection ML Pipeline
 
 A complete, production-ready machine learning pipeline for credit card fraud detection using scikit-learn, XGBoost, and FastAPI.
