@@ -14,5 +14,6 @@ include = ["fraud_detection*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-p no:cacheprovider"
 filterwarnings = ["ignore::DeprecationWarning"]
