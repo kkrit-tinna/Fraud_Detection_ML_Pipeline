@@ -5,7 +5,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fraud_detection.data import KNOWN_CATEGORIES
+from fraud_detection import config, etl
+from fraud_detection.data import KNOWN_CATEGORIES, load_table
+from fraud_detection.evaluate import best_f1_threshold
+from fraud_detection.features import FEATURE_COLUMNS, TARGET
+from fraud_detection.model import make_pipeline
+from fraud_detection.registry import save_model
 
 
 def make_raw(n_cards: int = 40, start: str = "2019-01-01", days: int = 60, seed: int = 0) -> pd.DataFrame:
@@ -55,3 +60,19 @@ def raw_csv_dir(tmp_path, raw_train, raw_test):
         out["dob"] = out["dob"].dt.strftime("%Y-%m-%d")
         out.to_csv(tmp_path / name)
     return tmp_path
+
+
+@pytest.fixture
+def trained_model(tmp_path, raw_csv_dir, monkeypatch):
+    processed = tmp_path / "processed"
+    manifest = etl.run(raw_csv_dir, processed)
+    assert manifest["rows"]["train"] > 0
+    train = load_table(processed / "train_features")
+    pipe = make_pipeline("xgboost", {"n_estimators": 30, "max_depth": 3, "sampler": "smote", "smote_ratio": 0.5})
+    pipe.fit(train[FEATURE_COLUMNS], train[TARGET])
+    thr = best_f1_threshold(train[TARGET], pipe.predict_proba(train[FEATURE_COLUMNS])[:, 1])
+    model_dir = save_model(pipe, {"model_name": "xgboost", "version": "v0.0.0-test", "decision_threshold": thr,
+                                  "features": FEATURE_COLUMNS, "metrics": {}}, tmp_path / "model")
+    monkeypatch.setattr(config, "MODEL_DIR", model_dir)
+    monkeypatch.setattr(config, "LOG_DIR", tmp_path / "logs")
+    return model_dir

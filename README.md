@@ -33,6 +33,8 @@ The shipped XGBoost model catches 1,947 of 2,145 test frauds and raises 83 false
 | F1-optimal (default) | maximise F1 on validation | 0.359 | 0.933 | 0.959 | 0.908 | 9.2% | 0.015% | 83 |
 | High-recall | highest threshold with validation recall >= 0.97 | 0.087 | 0.907 | 0.862 | 0.956 | 4.4% | 0.059% | 329 |
 
+These numbers come from the published model `v2.0.0` (trained on Linux x86). Rerunning `make pipeline` reproduces them to within about ±0.003 F1. XGBoost and Random Forest add up floating-point numbers in a different order on other CPUs and thread counts. For example, an Apple Silicon run gave test F1 0.931 (default) and 0.911 with 4.6% Type II (high-recall).
+
 | | |
 |---|---|
 | ![ROC and PR curves](reports/figures/roc_pr_curves.png) | ![Confusion matrix](reports/figures/confusion_matrix.png) |
@@ -100,6 +102,46 @@ The API uses the F1-optimal threshold by default. Set `FRAUD_OPERATING_POINT=hig
 
 Median latency is about 13 ms per request, measured in-process on 2 vCPUs including feature computation.
 
+### Real-time demo: stream transactions to the API
+
+`make replay` acts like a payment system sending live transactions. With the API running (`make serve`), run this in a second terminal:
+
+```bash
+make replay                                              # first 2,000 test transactions, one request each
+make replay ARGS="--start 2020-06-22 --limit 5000"       # start mid-stream
+make replay ARGS="--limit 0 --batch-size 500 --quiet"    # whole test set via /predict/batch
+```
+
+For each transaction, in time order, it:
+
+1. looks up the card's history in an **in-memory feature store** (`fraud_detection/feature_store.py`),
+2. sends the transaction and its history to `/predict`,
+3. records the transaction in the store, and prints an alert if it was flagged.
+
+Before streaming, the store loads the cards' earlier transactions from `fraudTrain.csv`, plus any rows before `--start`. Because the file has labels, the replay also reports running precision and recall:
+
+```
+ALERT 2020-06-21 22:32:22  card ...0820  $   780.52  misc_net        p=1.000 HIGH  [TRUE FRAUD]
+ALERT 2020-06-21 22:37:27  card ...0820  $   620.33  entertainment   p=0.999 HIGH  [TRUE FRAUD]
+ALERT 2020-06-21 22:38:55  card ...5478  $ 1,077.69  shopping_net    p=0.932 HIGH  [TRUE FRAUD]
+...
+Done: 3,000 transactions in 44.8s, 17 alerts.
+Against the labels: | precision 1.000 recall 0.944 (TP 17, FP 0, FN 1)
+Client-side latency per transaction: p50 14.1 ms, p95 19.6 ms
+```
+
+The feature store gives exactly the same history values as the batch features used in training. `tests/test_feature_store.py` checks this, and the replayed API scores match offline scoring to within the API's 6-decimal rounding. To score your own transactions, use the store the same way:
+
+```python
+from fraud_detection.feature_store import CardHistoryStore
+
+store = CardHistoryStore()
+store.warm_up(past_transactions_df)   # columns: cc_num, trans_date_trans_time, amt
+history = store.get(cc_num, timestamp)  # the 6 history fields for the request body
+# ... POST transaction fields + history to /predict ...
+store.update(cc_num, timestamp, amount)
+```
+
 ## How it works
 
 ```mermaid
@@ -144,6 +186,8 @@ fraud_detection/
   monitor.py     monthly performance replay, PSI drift, prediction-log summary
   pipeline.py    one-command run (ETL → train → monitor)
   api/app.py     FastAPI service
+  feature_store.py  in-memory per-card history store (online twin of features.card_history)
+  replay.py      real-time demo: streams transactions through the store to the API
 tests/           unit and end-to-end tests on synthetic data (run in CI)
 reports/         comparison table, figures, monitoring output, results notebook
 notebook/        original 2025 exploratory notebooks (see note below)
@@ -151,13 +195,13 @@ notebook/        original 2025 exploratory notebooks (see note below)
 
 ## Tests and CI
 
-`make test` runs unit tests for the feature logic and metric definitions. It also runs an end-to-end test on synthetic data that goes through ETL → fit → save → load → API (`/predict`, `/predict/batch`, validation errors, prediction logging) → drift. GitHub Actions runs the suite on Python 3.11 and 3.12 for every push.
+`make test` runs unit tests for the feature logic and metric definitions. It also runs an end-to-end test on synthetic data that goes through ETL → fit → save → load → API (`/predict`, `/predict/batch`, validation errors, prediction logging) → drift. A streaming test checks that the in-memory feature store matches the batch feature code exactly, and replays transactions through the API one at a time and in batches. GitHub Actions runs the suite on Python 3.11 and 3.12 for every push.
 
 ## Notes and limitations
 
 * The data is the public **simulated** Sparkov dataset, not real bank transactions.
 * `notebook/` holds the original 2025 exploratory notebooks, kept for the EDA. Their modelling sections predate this pipeline: one oversampled the test set, and another reported false positives as Type II errors. Current results come only from `make pipeline` and `reports/`.
-* The API expects the card-history values to be precomputed by the caller.
+* The API expects the card-history values to be precomputed by the caller. `CardHistoryStore` is an in-memory reference implementation. A production system would keep this state in a shared feature store such as Redis, updated by a transaction stream.
 
 ## License
 
