@@ -28,6 +28,7 @@ def test_api_predict_and_logging(trained_model, tmp_path):
 
     with TestClient(app) as client:
         assert client.get("/health").json()["model_loaded"] is True
+        assert client.get("/", follow_redirects=False).headers["location"] == "/docs"
         assert client.get("/model/info").json()["version"] == "v0.0.0-test"
 
         r = client.post("/predict", json=REQUEST)

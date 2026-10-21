@@ -22,6 +22,7 @@ from typing import Literal
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
 from .. import config
@@ -142,6 +143,11 @@ def _score(transactions: list[Transaction]) -> list[Prediction]:
                      "features": feats.iloc[i][FEATURE_COLUMNS].to_dict()})
     _log(logs)
     return preds
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/health")
