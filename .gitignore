@@ -7,6 +7,7 @@ __pycache__/
 
 # Environments
 .venv/
+fraud_detection_venv/
 venv/
 env/
 .env
