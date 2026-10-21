@@ -48,6 +48,8 @@ python -m venv .venv && source .venv/bin/activate      # Python 3.10–3.13
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
+> **macOS:** XGBoost needs the OpenMP runtime. Run `brew install libomp` once, or `import xgboost` fails with *"libomp.dylib could not be loaded"*.
+
 ### Option A: serve the published model (no data needed)
 
 ```bash
